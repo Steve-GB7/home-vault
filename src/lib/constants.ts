@@ -81,7 +81,7 @@ export const DOCUMENT_TYPE_LABELS: Record<string, string> = {
 export const LEGAL_TRANSITIONS: Record<string, string[]> = {
   new: ["assigned", "closed"],
   assigned: ["in_progress", "new", "closed"],
-  in_progress: ["resolved", "assigned"],
+  in_progress: ["resolved", "assigned", "closed"],
   resolved: ["closed", "in_progress"],
   closed: [],
 };

@@ -29,7 +29,10 @@ import {
   Play,
   Loader2,
   Image as ImageIcon,
+  XCircle,
+  Ban,
 } from "lucide-react";
+import { TicketRejectForm } from "./TicketRejectForm";
 import type { ComplaintWithAsset, ComplaintStatus, ServiceLog } from "@/types/domain";
 
 export interface TicketDetailModalProps {
@@ -48,6 +51,7 @@ export function TicketDetailModal({
   onServiceLogged,
 }: TicketDetailModalProps) {
   const [showLogForm, setShowLogForm] = useState(false);
+  const [showRejectForm, setShowRejectForm] = useState(false);
   const [assetContext, setAssetContext] = useState<any>(null);
   const [loadingContext, setLoadingContext] = useState(false);
   const [mediaList, setMediaList] = useState<any[]>([]);
@@ -55,6 +59,13 @@ export function TicketDetailModal({
   const [mediaError, setMediaError] = useState<string | null>(null);
   const [videoLoaded, setVideoLoaded] = useState<Record<string, boolean>>({});
   const [videoError, setVideoError] = useState<Record<string, string>>({});
+
+  useEffect(() => {
+    if (!isOpen) {
+      setShowLogForm(false);
+      setShowRejectForm(false);
+    }
+  }, [isOpen]);
 
   useEffect(() => {
     if (ticket?.asset_id && isOpen) {
@@ -115,10 +126,18 @@ export function TicketDetailModal({
     <Modal
       isOpen={isOpen}
       onClose={onClose}
-      title={showLogForm ? "Log Service Record & Resolution" : ticket.title}
+      title={
+        showLogForm
+          ? "Log Service Record & Resolution"
+          : showRejectForm
+          ? "Reject Complaint Ticket"
+          : ticket.title
+      }
       description={
         showLogForm
           ? "Record technician labor, replaced parts, and repair notes to complete this ticket."
+          : showRejectForm
+          ? `Specify rejection rationale to close ticket #${ticket.id.slice(0, 8)}.`
           : `Ticket #${ticket.id.slice(0, 8)} • Raised ${formatDate(ticket.created_at)}`
       }
       maxWidth="3xl"
@@ -135,8 +154,42 @@ export function TicketDetailModal({
           }}
           onCancel={() => setShowLogForm(false)}
         />
+      ) : showRejectForm ? (
+        <TicketRejectForm
+          complaintId={ticket.id}
+          ticketTitle={ticket.title}
+          onSuccess={(updatedComplaint) => {
+            setShowRejectForm(false);
+            onStatusUpdated(ticket.id, "closed");
+            onClose();
+          }}
+          onCancel={() => setShowRejectForm(false)}
+        />
       ) : (
         <div className="space-y-6">
+          {/* Rejection Notice Banner if Closed */}
+          {ticket.status === "closed" && ticket.resolution_notes && (
+            <div className="p-4 bg-rose-50/90 border border-rose-200 rounded-2xl flex items-start gap-3.5 shadow-2xs">
+              <div className="w-8 h-8 rounded-xl bg-rose-100 border border-rose-200 flex items-center justify-center text-rose-600 shrink-0 mt-0.5">
+                <Ban className="w-4 h-4" />
+              </div>
+              <div className="space-y-1">
+                <div className="flex items-center gap-2">
+                  <span className="text-xs font-bold text-rose-900 uppercase tracking-wide">
+                    Ticket Rejected & Closed
+                  </span>
+                  {ticket.resolved_at && (
+                    <span className="text-[11px] text-rose-600 font-medium">
+                      • {formatDate(ticket.resolved_at)}
+                    </span>
+                  )}
+                </div>
+                <p className="text-xs text-rose-800 leading-relaxed font-medium">
+                  {ticket.resolution_notes}
+                </p>
+              </div>
+            </div>
+          )}
           {/* Status & Priority Row */}
           <div className="flex flex-wrap items-center justify-between gap-3 p-4 bg-slate-50 rounded-2xl border border-slate-200">
             <div className="flex items-center gap-2">
@@ -467,14 +520,29 @@ export function TicketDetailModal({
             <Button variant="ghost" onClick={onClose}>
               Close
             </Button>
-            <Button
-              variant="primary"
-              onClick={() => setShowLogForm(true)}
-              className="bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/20"
-            >
-              <Wrench className="w-4 h-4" />
-              <span>Log Service & Bill Parts</span>
-            </Button>
+            <div className="flex items-center gap-2.5">
+              {ticket.status !== "closed" && (
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => setShowRejectForm(true)}
+                  className="border-rose-200 text-rose-600 hover:bg-rose-50 hover:text-rose-700 hover:border-rose-300"
+                >
+                  <XCircle className="w-4 h-4" />
+                  <span>Reject Ticket</span>
+                </Button>
+              )}
+              {ticket.status !== "resolved" && ticket.status !== "closed" && (
+                <Button
+                  variant="primary"
+                  onClick={() => setShowLogForm(true)}
+                  className="bg-indigo-600 hover:bg-indigo-700 shadow-md shadow-indigo-600/20"
+                >
+                  <Wrench className="w-4 h-4" />
+                  <span>Log Service & Bill Parts</span>
+                </Button>
+              )}
+            </div>
           </div>
         </div>
       )}

@@ -19,7 +19,9 @@ export async function PATCH(
     }
 
     const { id } = await params;
-    const { status } = await req.json();
+    const body = await req.json();
+    const status = body.status;
+    const notes = body.rejection_reason || body.resolution_notes || null;
     const store = getStore();
 
     const complaint = store.complaints.find((c) => c.id === id);
@@ -54,6 +56,9 @@ export async function PATCH(
 
     complaint.status = status as ComplaintStatus;
     complaint.updated_at = new Date().toISOString();
+    if (notes) {
+      complaint.resolution_notes = notes;
+    }
     if (status === "resolved" || status === "closed") {
       complaint.resolved_at = new Date().toISOString();
     }

@@ -122,7 +122,7 @@ export function InvoiceOcrUploader({ onOcrExtracted }: InvoiceOcrUploaderProps) 
             <div className="space-y-1">
               <p className="text-sm font-bold text-slate-800 flex items-center justify-center gap-1.5">
                 <Sparkles className="w-4 h-4 text-indigo-600 animate-pulse" />
-                <span>Scanning Invoice with Vision OCR...</span>
+                <span>Scanning Warranty Card with Vision OCR...</span>
               </p>
               <p className="text-xs text-slate-500">
                 Extracting brand, model, serial number, and warranty specs
@@ -136,10 +136,10 @@ export function InvoiceOcrUploader({ onOcrExtracted }: InvoiceOcrUploaderProps) 
             </div>
             <div>
               <p className="text-sm font-bold text-slate-800">
-                Click or drag & drop appliance invoice
+                Click or drag & drop appliance warranty card
               </p>
               <p className="text-xs text-slate-500 mt-1">
-                Supports PDF, JPG, PNG or WebP receipt documents
+                Supports PDF, JPG, PNG or WebP warranty card or receipt documents
               </p>
             </div>
             <div className="inline-flex items-center gap-1.5 text-xs text-indigo-600 bg-indigo-50/80 px-2.5 py-1 rounded-lg">

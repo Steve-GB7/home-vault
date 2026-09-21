@@ -382,6 +382,19 @@ const initialBusinesses: Business[] = [
     created_at: "2023-04-18T10:00:00Z",
     updated_at: "2023-04-18T10:00:00Z",
   },
+  {
+    id: "bbbbbbbb-0000-0000-0000-000000000002",
+    name: "Apex Electronics & Care",
+    btype: "service_center",
+    contact_email: "desk@apexcare.demo",
+    contact_phone: "+91-9876-543210",
+    city: "Ernakulam",
+    service_categories: ["refrigerator", "washing_machine"],
+    tier: "pro",
+    is_approved: true,
+    created_at: "2023-04-18T10:00:00Z",
+    updated_at: "2023-04-18T10:00:00Z",
+  },
 ];
 
 const initialBusinessMembers: BusinessMember[] = [
@@ -401,6 +414,14 @@ const initialBusinessMembers: BusinessMember[] = [
     display_name: "Suresh Kumar",
     created_at: "2023-04-18T10:00:00Z",
   },
+  {
+    id: "bm-3",
+    business_id: "bbbbbbbb-0000-0000-0000-000000000002",
+    user_id: "55555555-5555-5555-5555-555555555555",
+    is_admin: true,
+    display_name: "Vikram Sharma",
+    created_at: "2023-04-18T10:00:00Z",
+  },
 ];
 
 const initialUsers: MockUser[] = [
@@ -408,21 +429,31 @@ const initialUsers: MockUser[] = [
     id: DEMO_USERS.priya,
     email: "priya@homevault.demo",
     full_name: "Priya Nair",
+    password: "HomeVault@2026",
   },
   {
     id: DEMO_USERS.arun,
     email: "arun@homevault.demo",
     full_name: "Arun Nair",
+    password: "HomeVault@2026",
   },
   {
     id: DEMO_USERS.rahul,
     email: "desk@coolcare.demo",
     full_name: "Rahul Menon",
+    password: "HomeVault@2026",
   },
   {
     id: "44444444-4444-4444-4444-444444444444",
     email: "suresh@coolcare.demo",
     full_name: "Suresh Kumar",
+    password: "HomeVault@2026",
+  },
+  {
+    id: "55555555-5555-5555-5555-555555555555",
+    email: "desk@apexcare.demo",
+    full_name: "Vikram Sharma",
+    password: "HomeVault@2026",
   },
 ];
 

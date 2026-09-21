@@ -6,6 +6,13 @@ export async function GET(req: NextRequest) {
   try {
     const session = await getCurrentUserSession();
 
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     let orgName = "HomeVault";
     let btype = "service_center";
 
@@ -34,23 +41,9 @@ export async function GET(req: NextRequest) {
       },
     });
   } catch (err: any) {
-    // Return a valid non-authenticated session instead of an error
-    return NextResponse.json({
-      ok: true,
-      data: {
-        userId: null,
-        email: null,
-        fullName: "Guest",
-        role: "household",
-        householdId: null,
-        businessId: null,
-        isHouseholdOwner: false,
-        isBusinessAdmin: false,
-        hasHouseholdMembership: false,
-        hasBusinessMembership: false,
-        orgName: "HomeVault",
-        btype: "service_center",
-      },
-    });
+    return NextResponse.json(
+      { ok: false, error: "Internal server error" },
+      { status: 500 }
+    );
   }
 }

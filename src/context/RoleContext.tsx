@@ -1,11 +1,10 @@
 "use client";
 
 import { createContext, useContext, useState, useEffect, useCallback, type ReactNode } from "react";
-import { DEMO_USERS, DEMO_HOUSEHOLD_ID, DEMO_BUSINESS_ID } from "@/lib/constants";
 
 export type ActiveRole = "household" | "business";
 
-export interface DemoUser {
+export interface AppUser {
   id: string;
   name: string;
   email: string;
@@ -20,40 +19,26 @@ export interface DemoUser {
   hasBusinessMembership?: boolean;
 }
 
-export const DEMO_HOUSEHOLD_USER: DemoUser = {
-  id: DEMO_USERS.priya,
-  name: "Priya Nair",
-  email: "priya@homevault.demo",
+// Default "not logged in" state — used before session loads
+const GUEST_USER: AppUser = {
+  id: "",
+  name: "Guest",
+  email: "",
   role: "household",
-  orgName: "Nair Residence",
-  householdId: DEMO_HOUSEHOLD_ID,
-  isHouseholdOwner: true,
-  isBusinessAdmin: false,
-  hasHouseholdMembership: true,
-  hasBusinessMembership: false,
-};
-
-export const DEMO_BUSINESS_USER: DemoUser = {
-  id: DEMO_USERS.rahul,
-  name: "Rahul Menon",
-  email: "desk@coolcare.demo",
-  role: "business",
-  orgName: "CoolCare Authorized Service",
-  businessId: DEMO_BUSINESS_ID,
-  btype: "service_center",
+  orgName: "HomeVault",
   isHouseholdOwner: false,
-  isBusinessAdmin: true,
+  isBusinessAdmin: false,
   hasHouseholdMembership: false,
-  hasBusinessMembership: true,
+  hasBusinessMembership: false,
 };
 
 interface RoleContextType {
   role: ActiveRole;
-  user: DemoUser;
+  user: AppUser;
   canSwitchRole: boolean;
   setRole: (role: ActiveRole) => void;
   toggleRole: () => void;
-  setUser: (user: DemoUser) => void;
+  setUser: (user: AppUser) => void;
   refreshSession: () => Promise<void>;
 }
 
@@ -61,15 +46,31 @@ const RoleContext = createContext<RoleContextType | undefined>(undefined);
 
 export function RoleProvider({ children }: { children: ReactNode }) {
   const [role, setRoleState] = useState<ActiveRole>("household");
-  const [user, setUserState] = useState<DemoUser>(DEMO_HOUSEHOLD_USER);
+  const [user, setUserState] = useState<AppUser>(GUEST_USER);
 
   const refreshSession = useCallback(async () => {
     try {
       const res = await fetch("/api/auth/session");
+
+      // Handle 401 — user is not authenticated
+      if (res.status === 401) {
+        setUserState(GUEST_USER);
+        // Redirect to login if not already on a public page
+        if (
+          typeof window !== "undefined" &&
+          !window.location.pathname.startsWith("/login") &&
+          !window.location.pathname.startsWith("/signup") &&
+          !window.location.pathname.startsWith("/join")
+        ) {
+          window.location.href = "/login";
+        }
+        return;
+      }
+
       const json = await res.json();
       if (json.ok && json.data) {
         const d = json.data;
-        const mappedUser: DemoUser = {
+        const mappedUser: AppUser = {
           id: d.userId,
           name: d.fullName,
           email: d.email,
@@ -87,15 +88,11 @@ export function RoleProvider({ children }: { children: ReactNode }) {
         setRoleState(d.role);
       }
     } catch {
-      // ignore
+      // ignore network errors
     }
   }, []);
 
   useEffect(() => {
-    const savedRole = localStorage.getItem("homevault_active_role") as ActiveRole | null;
-    if (savedRole === "household" || savedRole === "business") {
-      setRoleState(savedRole);
-    }
     refreshSession();
   }, [refreshSession]);
 
@@ -105,9 +102,8 @@ export function RoleProvider({ children }: { children: ReactNode }) {
       ...prev,
       role: newRole,
     }));
+    // Store role preference in localStorage only — no client-side cookie writes
     localStorage.setItem("homevault_active_role", newRole);
-    document.cookie = `homevault_role=${newRole}; path=/; max-age=31536000; SameSite=Lax`;
-    document.cookie = `homevault_active_role=${newRole}; path=/; max-age=31536000; SameSite=Lax`;
   };
 
   const toggleRole = () => {
@@ -115,7 +111,7 @@ export function RoleProvider({ children }: { children: ReactNode }) {
     setRole(nextRole);
   };
 
-  const setUser = (newUser: DemoUser) => {
+  const setUser = (newUser: AppUser) => {
     setUserState(newUser);
     setRole(newUser.role);
   };
@@ -146,7 +142,7 @@ export function useRole() {
   if (!context) {
     return {
       role: "household" as ActiveRole,
-      user: DEMO_HOUSEHOLD_USER,
+      user: GUEST_USER,
       canSwitchRole: false,
       setRole: () => {},
       toggleRole: () => {},

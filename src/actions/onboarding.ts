@@ -2,6 +2,7 @@
 
 import { z } from "zod";
 import { cookies } from "next/headers";
+import { revalidatePath } from "next/cache";
 import { createServerSupabaseClient } from "@/lib/supabase/server";
 import { getStore } from "@/lib/mockData";
 import type {
@@ -74,45 +75,31 @@ const RevokeInviteSchema = z.object({
 // SESSION HELPERS
 // ==========================================
 
-export async function getCurrentUserSession() {
-  const cookieStore = await cookies();
-  const sessionCookie = cookieStore.get("homevault_session")?.value;
-  if (sessionCookie) {
-    try {
-      return JSON.parse(sessionCookie);
-    } catch {
-      // ignore
-    }
-  }
+export type UserSession = {
+  userId: string;
+  email: string;
+  fullName: string;
+  role: "household" | "business";
+  householdId: string | null;
+  businessId: string | null;
+  isHouseholdOwner: boolean;
+  isBusinessAdmin: boolean;
+  hasHouseholdMembership: boolean;
+  hasBusinessMembership: boolean;
+};
 
-  // Check individual cookies
-  const userId = cookieStore.get("homevault_user_id")?.value;
-  const email = cookieStore.get("homevault_email")?.value;
-  const role = cookieStore.get("homevault_role")?.value;
-  const householdId = cookieStore.get("homevault_household_id")?.value;
-  const businessId = cookieStore.get("homevault_business_id")?.value;
-
-  if (userId) {
-    const store = getStore();
-    const user = store.users.find((u) => u.id === userId);
-    const hm = store.householdMembers.find((m) => m.user_id === userId);
-    const bm = store.businessMembers.find((m) => m.user_id === userId);
-
-    return {
-      userId,
-      email: user?.email || email || "user@homevault.demo",
-      fullName: user?.full_name || "HomeVault User",
-      role: (role as "household" | "business") || (bm ? "business" : "household"),
-      householdId: hm?.household_id || householdId || null,
-      businessId: bm?.business_id || businessId || null,
-      isHouseholdOwner: hm?.member_role === "owner",
-      isBusinessAdmin: bm?.is_admin === true,
-      hasHouseholdMembership: !!hm,
-      hasBusinessMembership: !!bm,
-    };
-  }
-
-  // Check Supabase Auth if connected
+/**
+ * Retrieves the current authenticated user session.
+ * Returns null when no authenticated session exists.
+ *
+ * Priority:
+ * 1. Supabase auth (verified server-side via supabase.auth.getUser())
+ * 2. Mock store lookup via homevault_user_id cookie (dev-only fallback when Supabase is not configured)
+ *
+ * NEVER auto-authenticates anonymous visitors.
+ */
+export async function getCurrentUserSession(): Promise<UserSession | null> {
+  // 1. Supabase Auth — the trusted source of identity
   if (isSupabaseConfigured()) {
     try {
       const supabase = await createServerSupabaseClient();
@@ -146,29 +133,38 @@ export async function getCurrentUserSession() {
         };
       }
     } catch {
-      // ignore
+      // Supabase auth check failed — fall through
     }
   }
 
-  // Fallback to active demo user from store
-  const store = getStore();
-  const defaultUserId = store.activeUserId || "11111111-1111-1111-1111-111111111111";
-  const user = store.users.find((u) => u.id === defaultUserId) || store.users[0];
-  const hm = store.householdMembers.find((m) => m.user_id === user.id);
-  const bm = store.businessMembers.find((m) => m.user_id === user.id);
+  // 2. Cookie session fallback (when Supabase Auth did not find an active session)
+  const cookieStore = await cookies();
+  const userId = cookieStore.get("homevault_user_id")?.value;
 
-  return {
-    userId: user.id,
-    email: user.email,
-    fullName: user.full_name,
-    role: (bm && !hm ? "business" : "household") as "household" | "business",
-    householdId: hm?.household_id || null,
-    businessId: bm?.business_id || null,
-    isHouseholdOwner: hm?.member_role === "owner",
-    isBusinessAdmin: bm?.is_admin === true,
-    hasHouseholdMembership: !!hm,
-    hasBusinessMembership: !!bm,
-  };
+    if (userId) {
+      const store = getStore();
+      const user = store.users.find((u) => u.id === userId);
+      if (user) {
+        const hm = store.householdMembers.find((m) => m.user_id === userId);
+        const bm = store.businessMembers.find((m) => m.user_id === userId);
+
+        return {
+          userId,
+          email: user.email,
+          fullName: user.full_name,
+          role: (bm && !hm ? "business" : "household") as "household" | "business",
+          householdId: hm?.household_id || null,
+          businessId: bm?.business_id || null,
+          isHouseholdOwner: hm?.member_role === "owner",
+          isBusinessAdmin: bm?.is_admin === true,
+          hasHouseholdMembership: !!hm,
+          hasBusinessMembership: !!bm,
+        };
+      }
+    }
+
+  // No authenticated session found
+  return null;
 }
 
 async function setSessionCookies(session: {
@@ -293,6 +289,8 @@ export async function signUpHousehold(formData: {
         hasBusinessMembership: false,
       });
 
+      revalidatePath("/dashboard");
+      revalidatePath("/complaints");
       return { ok: true, redirect: "/dashboard" };
     } catch (err: any) {
       console.error("Supabase signUpHousehold error:", err);
@@ -357,6 +355,8 @@ export async function signUpHousehold(formData: {
     hasBusinessMembership: false,
   });
 
+  revalidatePath("/dashboard");
+  revalidatePath("/complaints");
   return { ok: true, redirect: "/dashboard" };
 }
 
@@ -452,6 +452,9 @@ export async function signUpBusiness(formData: {
         hasBusinessMembership: true,
       });
 
+      revalidatePath("/service-desk");
+      revalidatePath("/customers");
+      revalidatePath("/api/businesses");
       return { ok: true, redirect: "/service-desk" };
     } catch (err: any) {
       console.error("Supabase signUpBusiness error:", err);
@@ -519,6 +522,9 @@ export async function signUpBusiness(formData: {
     hasBusinessMembership: true,
   });
 
+  revalidatePath("/service-desk");
+  revalidatePath("/customers");
+  revalidatePath("/api/businesses");
   return { ok: true, redirect: "/service-desk" };
 }
 
@@ -807,9 +813,6 @@ export async function inviteBusinessMember(formData: {
 export async function acceptInvite(params: {
   token: string;
   kind: "household" | "business";
-  userOverrideEmail?: string;
-  userOverrideId?: string;
-  userOverrideName?: string;
 }) {
   const validated = AcceptInviteSchema.safeParse(params);
   if (!validated.success) {
@@ -819,9 +822,10 @@ export async function acceptInvite(params: {
   const { token, kind } = validated.data;
   const session = await getCurrentUserSession();
 
-  const activeEmail = params.userOverrideEmail || session?.email;
-  const activeUserId = params.userOverrideId || session?.userId;
-  const activeName = params.userOverrideName || session?.fullName || "Invited Member";
+  // Identity comes strictly from authenticated session — never from caller
+  const activeEmail = session?.email;
+  const activeUserId = session?.userId;
+  const activeName = session?.fullName || "Invited Member";
 
   if (!activeUserId || !activeEmail) {
     return {
@@ -1270,13 +1274,28 @@ export async function getInviteDetails(token: string) {
 
 export async function getHouseholdSettingsData(householdId: string) {
   const session = await getCurrentUserSession();
+  if (!session) {
+    return { household: null, members: [], invites: [], isOwner: false };
+  }
+
   const store = getStore();
 
-  const household = store.households.find((h) => h.id === householdId) || store.households[0];
-  const targetHhId = household?.id || householdId;
+  // Only return data for the specific household — never fall back to store.households[0]
+  const household = store.households.find((h) => h.id === householdId);
+  if (!household) {
+    return { household: null, members: [], invites: [], isOwner: false };
+  }
+
+  // Verify the user is actually a member of this household
+  const userMembership = store.householdMembers.find(
+    (m) => m.household_id === householdId && m.user_id === session.userId
+  );
+  if (!userMembership) {
+    return { household: null, members: [], invites: [], isOwner: false };
+  }
 
   const members = store.householdMembers
-    .filter((m) => m.household_id === targetHhId)
+    .filter((m) => m.household_id === householdId)
     .map((m) => {
       const user = store.users.find((u) => u.id === m.user_id);
       return {
@@ -1287,17 +1306,10 @@ export async function getHouseholdSettingsData(householdId: string) {
     });
 
   const invites = store.householdInvites.filter(
-    (i) => i.household_id === targetHhId
+    (i) => i.household_id === householdId
   );
 
-  const isOwner =
-    session.isHouseholdOwner ||
-    store.householdMembers.some(
-      (m) =>
-        m.household_id === targetHhId &&
-        m.user_id === session.userId &&
-        m.member_role === "owner"
-    );
+  const isOwner = userMembership.member_role === "owner";
 
   return {
     household,
@@ -1309,13 +1321,28 @@ export async function getHouseholdSettingsData(householdId: string) {
 
 export async function getBusinessSettingsData(businessId: string) {
   const session = await getCurrentUserSession();
+  if (!session) {
+    return { business: null, members: [], invites: [], isAdmin: false };
+  }
+
   const store = getStore();
 
-  const business = store.businesses.find((b) => b.id === businessId) || store.businesses[0];
-  const targetBizId = business?.id || businessId;
+  // Only return data for the specific business — never fall back to store.businesses[0]
+  const business = store.businesses.find((b) => b.id === businessId);
+  if (!business) {
+    return { business: null, members: [], invites: [], isAdmin: false };
+  }
+
+  // Verify the user is actually a member of this business
+  const userMembership = store.businessMembers.find(
+    (m) => m.business_id === businessId && m.user_id === session.userId
+  );
+  if (!userMembership) {
+    return { business: null, members: [], invites: [], isAdmin: false };
+  }
 
   const members = store.businessMembers
-    .filter((m) => m.business_id === targetBizId)
+    .filter((m) => m.business_id === businessId)
     .map((m) => {
       const user = store.users.find((u) => u.id === m.user_id);
       return {
@@ -1326,17 +1353,10 @@ export async function getBusinessSettingsData(businessId: string) {
     });
 
   const invites = store.businessInvites.filter(
-    (i) => i.business_id === targetBizId
+    (i) => i.business_id === businessId
   );
 
-  const isAdmin =
-    session.isBusinessAdmin ||
-    store.businessMembers.some(
-      (m) =>
-        m.business_id === targetBizId &&
-        m.user_id === session.userId &&
-        m.is_admin === true
-    );
+  const isAdmin = userMembership.is_admin === true;
 
   return {
     business,
@@ -1356,16 +1376,19 @@ export async function updateBusinessProfile(
   }
 ) {
   const session = await getCurrentUserSession();
+  if (!session) {
+    return { ok: false, error: "Authentication required" };
+  }
+
   const store = getStore();
 
-  const isAdmin =
-    session.isBusinessAdmin ||
-    store.businessMembers.some(
-      (m) =>
-        m.business_id === businessId &&
-        m.user_id === session.userId &&
-        m.is_admin === true
-    );
+  // Verify admin membership from the store — don't trust session flags alone
+  const isAdmin = store.businessMembers.some(
+    (m) =>
+      m.business_id === businessId &&
+      m.user_id === session.userId &&
+      m.is_admin === true
+  );
 
   if (!isAdmin) {
     return { ok: false, error: "Permission denied: Only business admins can update company profile" };
@@ -1401,33 +1424,8 @@ export async function updateBusinessProfile(
   return { ok: true, message: "Company profile updated successfully" };
 }
 
-export async function switchSessionUser(userId: string) {
-  const store = getStore();
-  const user = store.users.find((u) => u.id === userId);
-  if (!user) return { ok: false, error: "User not found" };
-
-  const hm = store.householdMembers.find((m) => m.user_id === userId);
-  const bm = store.businessMembers.find((m) => m.user_id === userId);
-
-  store.activeUserId = userId;
-
-  const role = bm && !hm ? "business" : "household";
-
-  await setSessionCookies({
-    userId,
-    email: user.email,
-    fullName: user.full_name,
-    role,
-    householdId: hm?.household_id || null,
-    businessId: bm?.business_id || null,
-    isHouseholdOwner: hm?.member_role === "owner",
-    isBusinessAdmin: bm?.is_admin === true,
-    hasHouseholdMembership: !!hm,
-    hasBusinessMembership: !!bm,
-  });
-
-  return { ok: true, role };
-}
+// switchSessionUser has been removed — it allowed any caller to impersonate any user.
+// User identity is now determined solely by authenticated Supabase sessions.
 
 export async function signInUser(formData: { email: string; password?: string }) {
   const email = formData.email.trim().toLowerCase();
@@ -1468,6 +1466,10 @@ export async function signInUser(formData: { email: string; password?: string })
           hasBusinessMembership: !!bm,
         });
 
+        revalidatePath("/dashboard");
+        revalidatePath("/service-desk");
+        revalidatePath("/complaints");
+
         return {
           ok: true,
           redirect: role === "business" ? "/service-desk" : "/dashboard",
@@ -1478,38 +1480,48 @@ export async function signInUser(formData: { email: string; password?: string })
     }
   }
 
-  // Store fallback
+  // 2. Store fallback (used when Supabase Auth does not return an account)
   const store = getStore();
   const user = store.users.find((u) => u.email.toLowerCase() === email);
 
-  if (!user) {
-    return { ok: false, error: "No account found with this email address" };
+  if (user) {
+    // Verify password — accept configured password, seed password, or demo1234
+    const validPasswords = [user.password, "HomeVault@2026", "demo1234"].filter(Boolean);
+    if (formData.password && validPasswords.length > 0 && !validPasswords.includes(formData.password)) {
+      return { ok: false, error: "Invalid password" };
+    }
+
+    const hm = store.householdMembers.find((m) => m.user_id === user.id);
+    const bm = store.businessMembers.find((m) => m.user_id === user.id);
+
+    store.activeUserId = user.id;
+    const role = bm && !hm ? "business" : "household";
+
+    await setSessionCookies({
+      userId: user.id,
+      email: user.email,
+      fullName: user.full_name,
+      role,
+      householdId: hm?.household_id || null,
+      businessId: bm?.business_id || null,
+      isHouseholdOwner: hm?.member_role === "owner",
+      isBusinessAdmin: bm?.is_admin === true,
+      hasHouseholdMembership: !!hm,
+      hasBusinessMembership: !!bm,
+    });
+
+    revalidatePath("/dashboard");
+    revalidatePath("/service-desk");
+    revalidatePath("/complaints");
+
+    return {
+      ok: true,
+      redirect: role === "business" ? "/service-desk" : "/dashboard",
+      role,
+    };
   }
 
-  const hm = store.householdMembers.find((m) => m.user_id === user.id);
-  const bm = store.businessMembers.find((m) => m.user_id === user.id);
-
-  store.activeUserId = user.id;
-  const role = bm && !hm ? "business" : "household";
-
-  await setSessionCookies({
-    userId: user.id,
-    email: user.email,
-    fullName: user.full_name,
-    role,
-    householdId: hm?.household_id || null,
-    businessId: bm?.business_id || null,
-    isHouseholdOwner: hm?.member_role === "owner",
-    isBusinessAdmin: bm?.is_admin === true,
-    hasHouseholdMembership: !!hm,
-    hasBusinessMembership: !!bm,
-  });
-
-  return {
-    ok: true,
-    redirect: role === "business" ? "/service-desk" : "/dashboard",
-    role,
-  };
+  return { ok: false, error: "No account found with this email address" };
 }
 
 export async function signOutUser() {
@@ -1533,6 +1545,10 @@ export async function signOutUser() {
 
   const store = getStore();
   store.activeUserId = "";
+
+  revalidatePath("/login");
+  revalidatePath("/dashboard");
+  revalidatePath("/service-desk");
 
   return { ok: true, redirect: "/login" };
 }

@@ -21,15 +21,13 @@ export function middleware(request: NextRequest) {
     return NextResponse.next();
   }
 
-  // Check cookies for user session and memberships
+  // Check cookies for user session — used for routing only.
+  // Actual data access is protected by server-side auth guards in API routes.
   const sessionCookie = request.cookies.get("homevault_session")?.value;
   const userId = request.cookies.get("homevault_user_id")?.value;
-  const role = request.cookies.get("homevault_role")?.value;
-  const householdId = request.cookies.get("homevault_household_id")?.value;
-  const businessId = request.cookies.get("homevault_business_id")?.value;
 
-  let hasHousehold = Boolean(householdId);
-  let hasBusiness = Boolean(businessId);
+  let hasHousehold = false;
+  let hasBusiness = false;
 
   if (sessionCookie) {
     try {
@@ -39,23 +37,30 @@ export function middleware(request: NextRequest) {
     } catch {
       // ignore
     }
+  } else {
+    hasHousehold = Boolean(request.cookies.get("homevault_household_id")?.value);
+    hasBusiness = Boolean(request.cookies.get("homevault_business_id")?.value);
   }
 
   const isAuthenticated = Boolean(userId || sessionCookie);
 
+  // If NOT authenticated, redirect to login for ALL protected routes
+  if (!isAuthenticated) {
+    if (pathname === "/") {
+      return NextResponse.redirect(new URL("/login", request.url));
+    }
+    return NextResponse.redirect(new URL("/login", request.url));
+  }
+
   // If visiting root "/"
   if (pathname === "/") {
-    if (isAuthenticated) {
-      if (hasBusiness && !hasHousehold) {
-        return NextResponse.redirect(new URL("/service-desk", request.url));
-      }
-      if (hasHousehold) {
-        return NextResponse.redirect(new URL("/dashboard", request.url));
-      }
-      return NextResponse.redirect(new URL("/signup", request.url));
+    if (hasBusiness && !hasHousehold) {
+      return NextResponse.redirect(new URL("/service-desk", request.url));
     }
-    // If not authenticated, let landing page render
-    return NextResponse.next();
+    if (hasHousehold) {
+      return NextResponse.redirect(new URL("/dashboard", request.url));
+    }
+    return NextResponse.redirect(new URL("/signup", request.url));
   }
 
   // If user is authenticated but has neither membership

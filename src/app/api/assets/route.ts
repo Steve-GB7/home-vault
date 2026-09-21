@@ -1,14 +1,22 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
+import { getCurrentUserSession } from "@/actions/onboarding";
 import { getStore, calculateAssetSpend } from "@/lib/mockData";
-import { DEMO_HOUSEHOLD_ID, DEMO_USERS } from "@/lib/constants";
 import type { AssetWithCoverage } from "@/types/domain";
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await getCurrentUserSession();
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const store = getStore();
-    const queryHhId = req.nextUrl.searchParams.get("household_id");
-    const cookieHhId = req.cookies.get("homevault_household_id")?.value;
-    const targetHhId = queryHhId || cookieHhId;
+    // Use session's householdId to scope queries — never trust query params or cookies
+    const targetHhId = session.householdId;
 
     let filteredAssets = store.assets;
     if (targetHhId) {
@@ -34,6 +42,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getCurrentUserSession();
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const store = getStore();
 
@@ -44,12 +60,10 @@ export async function POST(req: NextRequest) {
       .toISOString()
       .split("T")[0];
 
-    const cookieHhId = req.cookies.get("homevault_household_id")?.value;
-    const cookieUserId = req.cookies.get("homevault_user_id")?.value;
-
+    // Use authenticated session identity — never trust cookies or request body for identity
     const newAsset: AssetWithCoverage = {
       id: newId,
-      household_id: body.household_id || cookieHhId || DEMO_HOUSEHOLD_ID,
+      household_id: session.householdId || "",
       category: body.category || "air_conditioner",
       brand: body.brand || "Unknown",
       model: body.model || "Unknown",
@@ -60,7 +74,7 @@ export async function POST(req: NextRequest) {
       seller_name: body.seller_name || null,
       location_in_home: body.location_in_home || "Living Room",
       capacity_spec: null,
-      created_by: cookieUserId || DEMO_USERS.priya,
+      created_by: session.userId,
       created_at: new Date().toISOString(),
       updated_at: new Date().toISOString(),
       deleted_at: null,
@@ -101,6 +115,9 @@ export async function POST(req: NextRequest) {
     };
 
     store.assets.unshift(newAsset);
+
+    revalidatePath("/dashboard");
+    revalidatePath("/service-desk");
 
     return NextResponse.json({ ok: true, data: newAsset });
   } catch (err: any) {

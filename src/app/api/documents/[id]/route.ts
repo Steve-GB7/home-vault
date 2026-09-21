@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCurrentUserSession } from "@/actions/onboarding";
 import { getStore } from "@/lib/mockData";
 
 export async function GET(
@@ -6,6 +7,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getCurrentUserSession();
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const { id } = await params;
     const store = getStore();
     const doc = store.documents.find((d) => d.id === id);

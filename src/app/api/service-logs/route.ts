@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { revalidatePath } from "next/cache";
+import { getCurrentUserSession } from "@/actions/onboarding";
 import { getStore, calculateAssetSpend } from "@/lib/mockData";
-import { DEMO_BUSINESS_ID } from "@/lib/constants";
 import type { ServiceLog } from "@/types/domain";
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await getCurrentUserSession();
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const store = getStore();
     return NextResponse.json({ ok: true, data: store.serviceLogs });
   } catch (err: any) {
@@ -17,6 +26,14 @@ export async function GET(req: NextRequest) {
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getCurrentUserSession();
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const body = await req.json();
     const store = getStore();
 
@@ -24,12 +41,13 @@ export async function POST(req: NextRequest) {
     const parts = Number(body.parts_cost) || 0;
     const total = labour + parts;
 
+    // Use session's business identity — never trust request body for business_id
     const newLog: ServiceLog = {
       id: `s-${Date.now()}`,
       asset_id: body.asset_id,
-      business_id: body.business_id || DEMO_BUSINESS_ID,
+      business_id: session.businessId || body.business_id || "",
       complaint_id: body.complaint_id || null,
-      technician_name: body.technician_name || "Rahul Menon",
+      technician_name: body.technician_name || session.fullName,
       stype: body.stype || "repair",
       service_date: body.service_date || new Date().toISOString().split("T")[0],
       work_performed: body.work_performed || "Appliance repair completed",
@@ -61,6 +79,10 @@ export async function POST(req: NextRequest) {
     if (asset && updatedSpend) {
       asset.spend = updatedSpend;
     }
+
+    revalidatePath("/service-desk");
+    revalidatePath("/dashboard");
+    revalidatePath("/complaints");
 
     return NextResponse.json({
       ok: true,

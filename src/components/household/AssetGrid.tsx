@@ -95,7 +95,7 @@ export function AssetGrid({
           <p className="text-sm text-slate-500 max-w-sm mx-auto mt-1 mb-5">
             {query || selectedCategory !== "all"
               ? "Try adjusting your search terms or filters."
-              : "Register your first appliance using invoice OCR scanning or manual entry."}
+              : "Register your first appliance using AI warranty card scanning or manual entry."}
           </p>
           <Button onClick={onOpenRegisterModal}>
             <Plus className="w-4 h-4" />

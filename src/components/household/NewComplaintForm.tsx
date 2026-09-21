@@ -1,13 +1,14 @@
 "use client";
 
 import { useState, useEffect } from "react";
+import Link from "next/link";
 import { Input } from "@/components/ui/input";
 import { Textarea } from "@/components/ui/textarea";
 import { Select } from "@/components/ui/select";
 import { Button } from "@/components/ui/button";
 import { MediaUploadPreview } from "./MediaUploadPreview";
 import { toast } from "@/components/ui/toast";
-import { Send } from "lucide-react";
+import { Send, AlertTriangle, ArrowRight, Loader2 } from "lucide-react";
 import type { AssetWithCoverage, Complaint } from "@/types/domain";
 
 export interface NewComplaintFormProps {
@@ -24,6 +25,12 @@ interface BusinessOption {
   city?: string;
 }
 
+interface DuplicateWarning {
+  message: string;
+  ticketId: string;
+  ticketNo?: string;
+}
+
 export function NewComplaintForm({
   asset,
   assets = [],
@@ -31,15 +38,18 @@ export function NewComplaintForm({
   onCancel,
 }: NewComplaintFormProps) {
   const [selectedAssetId, setSelectedAssetId] = useState<string>(
-    asset?.id || (assets.length > 0 ? assets[0].id : "")
+    asset?.id || ""
   );
   const [businesses, setBusinesses] = useState<BusinessOption[]>([]);
   const [selectedBusinessId, setSelectedBusinessId] = useState<string>("");
   const [title, setTitle] = useState("");
   const [description, setDescription] = useState("");
   const [priority, setPriority] = useState<string>("");
-  const [files, setFiles] = useState<File[]>([]);
+  const [videoFile, setVideoFile] = useState<File | null>(null);
+  const [videoDuration, setVideoDuration] = useState<number | null>(null);
+  const [photos, setPhotos] = useState<File[]>([]);
   const [loading, setLoading] = useState(false);
+  const [duplicateWarning, setDuplicateWarning] = useState<DuplicateWarning | null>(null);
 
   useEffect(() => {
     async function loadBusinesses() {
@@ -48,7 +58,6 @@ export function NewComplaintForm({
         const json = await res.json();
         if (json.ok && json.data && json.data.length > 0) {
           setBusinesses(json.data);
-          setSelectedBusinessId(json.data[0].id);
         }
       } catch (err) {
         console.error("Failed to load businesses:", err);
@@ -57,8 +66,15 @@ export function NewComplaintForm({
     loadBusinesses();
   }, []);
 
+  const handleVideoChange = (file: File | null, duration?: number) => {
+    setVideoFile(file);
+    setVideoDuration(duration || null);
+  };
+
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
+    setDuplicateWarning(null);
+
     if (!selectedAssetId) {
       toast.error("Please select an appliance");
       return;
@@ -71,8 +87,16 @@ export function NewComplaintForm({
       toast.error("Please enter an issue title");
       return;
     }
+    if (!description.trim()) {
+      toast.error("Please provide a detailed description of the issue");
+      return;
+    }
     if (!priority) {
       toast.error("Please select a priority");
+      return;
+    }
+    if (!videoFile) {
+      toast.error("A short video of the issue is required to submit a complaint.");
       return;
     }
 
@@ -81,14 +105,32 @@ export function NewComplaintForm({
       const selectedBiz = businesses.find((b) => b.id === selectedBusinessId);
       const bizName = selectedBiz ? selectedBiz.name : "the service provider";
 
+      // Prepare media payload with verified video first
+      const media = [
+        {
+          mtype: "video",
+          mime_type: videoFile.type || "video/mp4",
+          file_name: videoFile.name,
+          file_size: videoFile.size,
+          duration_seconds: videoDuration || 3,
+        },
+        ...photos.map((p) => ({
+          mtype: "image",
+          mime_type: p.type || "image/jpeg",
+          file_name: p.name,
+          file_size: p.size,
+        })),
+      ];
+
       const payload = {
         asset_id: selectedAssetId,
         title: title.trim(),
         description: description.trim(),
         priority,
         assigned_business_id: selectedBusinessId,
-        media_count: files.length,
-        has_media: files.length > 0,
+        media,
+        has_video: true,
+        media_count: media.length,
       };
 
       const res = await fetch("/api/complaints", {
@@ -98,6 +140,18 @@ export function NewComplaintForm({
       });
 
       const json = await res.json();
+
+      // Check for duplicate-complaint anti-fraud guard response
+      if (json.is_duplicate) {
+        setDuplicateWarning({
+          message: json.error || "You already raised a similar complaint recently on this asset.",
+          ticketId: json.existing_ticket_id,
+          ticketNo: json.existing_ticket_no,
+        });
+        toast.error("Similar complaint detected on this asset within the last hour.");
+        return;
+      }
+
       if (!res.ok || !json.ok) {
         throw new Error(json.error || "Failed to raise complaint ticket");
       }
@@ -136,8 +190,39 @@ export function NewComplaintForm({
     { value: "urgent", label: "Urgent - Complete breakdown / hazard" },
   ];
 
+  // Button is strictly disabled until: title filled, description filled, and at least one valid video attached
+  const isSubmittable =
+    !loading &&
+    title.trim().length > 0 &&
+    description.trim().length > 0 &&
+    videoFile !== null;
+
   return (
     <form onSubmit={handleSubmit} className="space-y-4">
+      {/* Duplicate ticket warning banner */}
+      {duplicateWarning && (
+        <div className="p-4 rounded-lg bg-amber-50 border border-amber-200 text-amber-900 text-xs space-y-2">
+          <div className="flex items-start gap-2">
+            <AlertTriangle className="w-4 h-4 text-amber-600 shrink-0 mt-0.5" />
+            <div>
+              <p className="font-semibold text-sm text-amber-900">{duplicateWarning.message}</p>
+              <p className="text-amber-700 mt-1">
+                Ticket #{duplicateWarning.ticketNo || duplicateWarning.ticketId.slice(0, 8)} was already raised on this appliance within the last 60 minutes.
+              </p>
+            </div>
+          </div>
+          <div className="pt-2 border-t border-amber-200/60 flex items-center gap-3">
+            <Link
+              href="/complaints"
+              className="inline-flex items-center gap-1.5 font-semibold text-[#0369a1] hover:underline"
+            >
+              <span>View Existing Ticket #{duplicateWarning.ticketNo || duplicateWarning.ticketId.slice(0, 8)}</span>
+              <ArrowRight className="w-3.5 h-3.5" />
+            </Link>
+          </div>
+        </div>
+      )}
+
       {/* Asset Selection */}
       {!asset && assets.length > 0 ? (
         <Select
@@ -193,24 +278,50 @@ export function NewComplaintForm({
         required
       />
 
-      {/* Media Upload */}
-      <MediaUploadPreview files={files} onChange={setFiles} />
+      {/* Mandatory Video Evidence & Optional Photos */}
+      <MediaUploadPreview
+        videoFile={videoFile}
+        onVideoChange={handleVideoChange}
+        photos={photos}
+        onPhotosChange={setPhotos}
+      />
 
       {/* Form buttons */}
-      <div className="flex items-center justify-end gap-3 pt-4 border-t border-slate-100">
-        {onCancel && (
-          <Button type="button" variant="ghost" onClick={onCancel}>
-            Cancel
+      <div className="flex items-center justify-between pt-4 border-t border-slate-100">
+        <div className="text-[11px] text-slate-400">
+          {!videoFile ? (
+            <span className="text-amber-600 font-medium">Video evidence is required before submission</span>
+          ) : !title.trim() || !description.trim() ? (
+            <span>Fill in title and description to submit</span>
+          ) : (
+            <span className="text-emerald-600 font-medium">Ready to submit</span>
+          )}
+        </div>
+
+        <div className="flex items-center gap-3">
+          {onCancel && (
+            <Button type="button" variant="ghost" onClick={onCancel}>
+              Cancel
+            </Button>
+          )}
+          <Button
+            type="submit"
+            disabled={!isSubmittable}
+            className="bg-[#0369a1] hover:bg-[#0284c7] text-white font-medium disabled:opacity-50 disabled:cursor-not-allowed"
+          >
+            {loading ? (
+              <>
+                <Loader2 className="w-4 h-4 mr-1.5 animate-spin" />
+                <span>Submitting...</span>
+              </>
+            ) : (
+              <>
+                <Send className="w-4 h-4 mr-1.5" />
+                <span>Submit Complaint Ticket</span>
+              </>
+            )}
           </Button>
-        )}
-        <Button
-          type="submit"
-          disabled={loading}
-          className="bg-[#0369a1] hover:bg-[#0284c7] text-white font-medium"
-        >
-          <Send className="w-4 h-4 mr-1.5" />
-          <span>Submit Complaint Ticket</span>
-        </Button>
+        </div>
       </div>
     </form>
   );

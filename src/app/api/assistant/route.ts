@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCurrentUserSession } from "@/actions/onboarding";
 import { getGemini, getModel, isGeminiAvailable } from "@/lib/gemini";
 import { getStore, calculateAssetSpend } from "@/lib/mockData";
 import { formatINR } from "@/lib/currency";
@@ -6,6 +7,14 @@ import { DEMO_AC_ASSET_ID } from "@/lib/constants";
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getCurrentUserSession();
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const { question, assetId } = await req.json();
 
     if (!question) {
@@ -33,6 +42,19 @@ export async function POST(req: NextRequest) {
 
     // Deterministic factual answer builder
     const buildFactualAnswer = () => {
+      if (
+        lowerQ.includes("hi") ||
+        lowerQ.includes("hello") ||
+        lowerQ.includes("hey") ||
+        lowerQ.includes("how are you") ||
+        lowerQ.includes("who are you")
+      ) {
+        return (
+          `Hello! I'm doing well, thank you for asking. I'm your **HomeVault AI Assistant**!\n\n` +
+          `I can help you look up verified appliance passport records, track AMC and manufacturer warranty expiry dates, calculate maintenance spend, or assist with service bookings. How can I help you today?`
+        );
+      }
+
       if (
         lowerQ.includes("how much") ||
         lowerQ.includes("spend") ||
@@ -74,35 +96,36 @@ export async function POST(req: NextRequest) {
 
     const factualAnswer = buildFactualAnswer();
 
-    // If Gemini is available, enhance with natural tone while strictly preserving computed figures
+    // If Gemini is available, enhance with natural tone and intelligent conversation
     if (isGeminiAvailable()) {
       try {
-        const gemini = getGemini();
-        if (gemini) {
-          const prompt = `You are the HomeVault Household Appliance Assistant.
-The user is asking: "${question}".
-Here are the exact computed database facts (DO NOT alter monetary numbers):
-- Asset: ${asset?.brand} ${asset?.model}
+        const prompt = `You are the HomeVault AI Assistant, an expert digital concierge for home appliance lifecycle management, warranty tracking, and maintenance budgeting.
+
+User Query: "${question}"
+
+Active Appliance Passport Context:
+- Appliance: ${asset?.brand || "LG"} ${asset?.model || "AC"} (${asset?.location_in_home || "Living Room"})
+- Serial Number: ${asset?.serial_number || "311KRPZ4D827"}
 - Purchase Price: ${formatINR(purchasePrice)}
-- Total Service & Repair Cost: ${formatINR(totalServiceCost)} (${formatINR(totalLabour)} labour + ${formatINR(totalParts)} parts across ${serviceCount} visits)
-- AMC Contract Cost: ${formatINR(amcCost)}
+- Total Maintenance & Service: ${formatINR(totalServiceCost)} (${formatINR(totalLabour)} labour + ${formatINR(totalParts)} parts across ${serviceCount} service visits)
+- Active AMC Contract: ${formatINR(amcCost)}
 - Total Lifetime Spend: ${formatINR(lifetimeSpend)}
 - Warranty: Active until 17 Apr 2033
-- AMC Expiry: 41 days remaining
+- AMC Expiry: 41 days remaining with CoolCare Authorized Service
 
-Provide a helpful, crisp answer referencing the exact rupee amounts above.`;
+Instructions:
+1. If the user is greeting or making general friendly conversation (e.g. "how are you", "hello", "hi"), respond warmly, conversationally, and naturally as HomeVault AI. Offer helpful assistance without dumping financial tables unless asked.
+2. If the user asks about spend, warranty, AMC, repair history, or appliance status, use the verified passport numbers above accurately.
+3. Keep the tone professional, crisp, and friendly with GitHub markdown formatting.`;
 
-          const aiResp = await gemini.models.generateContent({
-            model: getModel(),
-            contents: [{ role: "user", parts: [{ text: prompt }] }],
+        const { generateContentWithFallback } = await import("@/lib/gemini");
+        const answerText = await generateContentWithFallback(prompt);
+
+        if (answerText) {
+          return NextResponse.json({
+            ok: true,
+            data: { answer: answerText },
           });
-
-          if (aiResp.text) {
-            return NextResponse.json({
-              ok: true,
-              data: { answer: aiResp.text },
-            });
-          }
         }
       } catch (e) {
         console.warn("Gemini generation fallback:", e);

@@ -1,4 +1,5 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCurrentUserSession } from "@/actions/onboarding";
 import { getStore, calculateAssetSpend } from "@/lib/mockData";
 import type { TimelineEvent } from "@/types/domain";
 
@@ -7,6 +8,14 @@ export async function GET(
   { params }: { params: Promise<{ id: string }> }
 ) {
   try {
+    const session = await getCurrentUserSession();
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const { id } = await params;
     const store = getStore();
     const asset = store.assets.find((a) => a.id === id);
@@ -15,6 +24,14 @@ export async function GET(
       return NextResponse.json(
         { ok: false, error: "Asset not found" },
         { status: 404 }
+      );
+    }
+
+    // Verify the asset belongs to the user's household
+    if (session.householdId && asset.household_id !== session.householdId) {
+      return NextResponse.json(
+        { ok: false, error: "You are not authorized to view this asset" },
+        { status: 403 }
       );
     }
 

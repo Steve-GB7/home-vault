@@ -1,9 +1,18 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCurrentUserSession } from "@/actions/onboarding";
 import { getStore } from "@/lib/mockData";
 import { isSupabaseConfigured, createServerSupabaseClient } from "@/lib/supabase/server";
 
 export async function GET(req: NextRequest) {
   try {
+    const session = await getCurrentUserSession();
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     if (isSupabaseConfigured()) {
       try {
         const supabase = await createServerSupabaseClient();

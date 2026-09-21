@@ -1,10 +1,19 @@
 import { NextRequest, NextResponse } from "next/server";
+import { getCurrentUserSession } from "@/actions/onboarding";
 import { getGemini, getModel, isGeminiAvailable } from "@/lib/gemini";
 import { OCR_SYSTEM_INSTRUCTION, type OcrResult } from "@/lib/ocr/schema";
 import { validateOcrResult } from "@/lib/ocr/validators";
 
 export async function POST(req: NextRequest) {
   try {
+    const session = await getCurrentUserSession();
+    if (!session) {
+      return NextResponse.json(
+        { ok: false, error: "Not authenticated" },
+        { status: 401 }
+      );
+    }
+
     const formData = await req.formData();
     const file = formData.get("file") as File | null;
 

@@ -7,7 +7,6 @@ import {
   revokeInvite,
   getHouseholdSettingsData,
   getBusinessSettingsData,
-  switchSessionUser,
 } from "./src/actions/onboarding";
 import { getStore } from "./src/lib/mockData";
 import { DEMO_USERS, DEMO_HOUSEHOLD_ID, DEMO_BUSINESS_ID } from "./src/lib/constants";
@@ -211,12 +210,11 @@ async function runVerification() {
       full_name: "Kiran Tech",
     });
 
+    await switchSessionUser(techUserId);
+
     const acceptRes = await acceptInvite({
       token: inviteRes.data.token,
       kind: "business",
-      userOverrideEmail: "tech@freezefix.demo",
-      userOverrideId: techUserId,
-      userOverrideName: "Kiran Tech",
     });
 
     const techMember = store.businessMembers.find(

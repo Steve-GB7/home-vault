@@ -73,13 +73,10 @@ export default function JoinInvitePage({
       const emailToUse = acceptEmail.trim().toLowerCase();
       const nameToUse = acceptName.trim() || currentUser?.name || "Invited Member";
 
-      // If user overrides or is accepting as specific email
+      // Identity is determined server-side from the authenticated session
       const res = await acceptInvite({
         token,
         kind: inviteData.kind,
-        userOverrideEmail: emailToUse,
-        userOverrideId: currentUser?.id,
-        userOverrideName: nameToUse,
       });
 
       if (res.ok && res.redirect) {

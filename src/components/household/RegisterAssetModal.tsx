@@ -79,7 +79,7 @@ export function RegisterAssetModal({
       ) : (
         <Tabs defaultValue="ocr" value={tab} onValueChange={setTab}>
           <TabsList className="w-full grid grid-cols-2">
-            <TabsTrigger value="ocr">AI Invoice OCR Scan</TabsTrigger>
+            <TabsTrigger value="ocr">AI Warranty Card</TabsTrigger>
             <TabsTrigger value="manual">Manual Entry</TabsTrigger>
           </TabsList>
 
